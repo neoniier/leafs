@@ -24,7 +24,7 @@
 
 /// Generated files are compatible only with the same version
 /// of protobuf runtime.
-const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
+const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_7_2;
 
 #[derive(PartialEq,Clone,Default,Debug)]
 // @@protoc_insertion_point(message:Dns)
@@ -399,6 +399,17 @@ pub mod log {
             Level::WARN,
             Level::ERROR,
         ];
+
+        fn from_str(name: &str) -> ::std::option::Option<Level> {
+        match name {
+            "INFO" => Some(Level::INFO),
+            "TRACE" => Some(Level::TRACE),
+            "DEBUG" => Some(Level::DEBUG),
+            "WARN" => Some(Level::WARN),
+            "ERROR" => Some(Level::ERROR),
+            _ => None,
+        }
+    }
     }
 
     impl ::std::default::Default for Level {
@@ -436,6 +447,14 @@ pub mod log {
             Output::CONSOLE,
             Output::FILE,
         ];
+
+        fn from_str(name: &str) -> ::std::option::Option<Output> {
+        match name {
+            "CONSOLE" => Some(Output::CONSOLE),
+            "FILE" => Some(Output::FILE),
+            _ => None,
+        }
+    }
     }
 
     impl ::std::default::Default for Output {
@@ -4076,10 +4095,10 @@ pub mod router {
 
                 fn from_i32(value: i32) -> ::std::option::Option<Type> {
                     match value {
-                        0 => ::std::option::Option::Some(Type::PLAIN),
-                        1 => ::std::option::Option::Some(Type::DOMAIN),
-                        2 => ::std::option::Option::Some(Type::FULL),
-                        _ => ::std::option::Option::None
+                        0 => Some(Type::PLAIN),
+                        1 => Some(Type::DOMAIN),
+                        2 => Some(Type::FULL),
+                        _ => None,
                     }
                 }
 
@@ -4088,6 +4107,15 @@ pub mod router {
                     Type::DOMAIN,
                     Type::FULL,
                 ];
+
+                fn from_str(name: &str) -> ::std::option::Option<Type> {
+                    match name {
+                        "PLAIN" => Some(Type::PLAIN),
+                        "DOMAIN" => Some(Type::DOMAIN),
+                        "FULL" => Some(Type::FULL),
+                        _ => None,
+                    }
+                }
             }
 
             impl ::std::default::Default for Type {

@@ -24,7 +24,7 @@
 
 /// Generated files are compatible only with the same version
 /// of protobuf runtime.
-const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
+const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_7_2;
 
 #[derive(PartialEq,Clone,Default,Debug)]
 // @@protoc_insertion_point(message:Domain)
@@ -363,6 +363,16 @@ pub mod domain {
                 2 => ::std::option::Option::Some(Type::Domain),
                 3 => ::std::option::Option::Some(Type::Full),
                 _ => ::std::option::Option::None
+            }
+        }
+
+        fn from_str(s: &str) -> Option<Self> {
+            match s {
+                "Plain" => Some(Type::Plain),
+                "Regex" => Some(Type::Regex),
+                "Domain" => Some(Type::Domain),
+                "Full" => Some(Type::Full),
+                _ => None,
             }
         }
 

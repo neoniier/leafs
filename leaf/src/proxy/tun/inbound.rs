@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use futures::{sink::SinkExt, stream::StreamExt};
-use log::*;
 use protobuf::Message;
 use tokio::sync::mpsc::channel as tokio_channel;
 use tokio::sync::mpsc::{Receiver as TokioReceiver, Sender as TokioSender};
+//. use tracing::{debug, error, info, trace, warn};
 use tun::{self, TunPacket};
 
 use crate::{
@@ -23,7 +24,7 @@ use crate::{
 use super::netstack;
 
 async fn handle_inbound_stream(
-    stream: netstack::TcpStream,
+    stream: Pin<Box<netstack::TcpStream>>,
     local_addr: SocketAddr,
     remote_addr: SocketAddr,
     inbound_tag: String,
@@ -49,10 +50,10 @@ async fn handle_inbound_stream(
             // still have a chance to sniff the request domain
             // for TLS traffic in dispatcher.
             if remote_addr.port() != 443 {
-                log::debug!(
-                    "No paired domain found for this fake IP: {}, connection is rejected.",
-                    &remote_addr.ip()
-                );
+                // debug!(
+                //     "No paired domain found for this fake IP: {}, connection is rejected.",
+                //     &remote_addr.ip()
+                // );
                 return;
             }
         }
@@ -61,7 +62,7 @@ async fn handle_inbound_stream(
 }
 
 async fn handle_inbound_datagram(
-    socket: Box<netstack::UdpSocket>,
+    socket: Pin<Box<netstack::UdpSocket>>,
     inbound_tag: String,
     nat_manager: Arc<NatManager>,
     fakedns: Arc<FakeDns>,
@@ -85,16 +86,16 @@ async fn handle_inbound_datagram(
                     if let Some(ip) = fakedns_cloned.query_fake_ip(&domain).await {
                         SocketAddr::new(ip, port)
                     } else {
-                        warn!(
-                                "Received datagram with source address {}:{} without paired fake IP found.",
-                                &domain, &port
-                            );
+                        // warn!(
+                        //     "Received datagram with source address {}:{} without paired fake IP found.",
+                        //     &domain, &port
+                        // );
                         continue;
                     }
                 }
             };
             if let Err(e) = ls_cloned.send_to(&pkt.data[..], &src_addr, &pkt.dst_addr.must_ip()) {
-                warn!("A packet failed to send to the netstack: {}", e);
+                // warn!("A packet failed to send to the netstack: {}", e);
             }
         }
     });
@@ -103,7 +104,7 @@ async fn handle_inbound_datagram(
     loop {
         match lr.recv_from().await {
             Err(e) => {
-                log::warn!("Failed to accept a datagram from netstack: {}", e);
+                // warn!("Failed to accept a datagram from netstack: {}", e);
             }
             Ok((data, src_addr, dst_addr)) => {
                 // Fake DNS logic.
@@ -111,12 +112,12 @@ async fn handle_inbound_datagram(
                     match fakedns.generate_fake_response(&data).await {
                         Ok(resp) => {
                             if let Err(e) = ls.send_to(resp.as_ref(), &dst_addr, &src_addr) {
-                                warn!("A packet failed to send to the netstack: {}", e);
+                                // warn!("A packet failed to send to the netstack: {}", e);
                             }
                             continue;
                         }
                         Err(err) => {
-                            trace!("generate fake ip failed: {}", err);
+                            // trace!("generate fake ip failed: {}", err);
                         }
                     }
                 }
@@ -137,10 +138,10 @@ async fn handle_inbound_datagram(
                     if let Some(domain) = fakedns.query_domain(&dst_addr.ip()).await {
                         SocksAddr::Domain(domain, dst_addr.port())
                     } else {
-                        log::debug!(
-                            "No paired domain found for this fake IP: {}, datagram is rejected.",
-                            &dst_addr.ip()
-                        );
+                        // debug!(
+                        //     "No paired domain found for this fake IP: {}, datagram is rejected.",
+                        //     &dst_addr.ip()
+                        // );
                         continue;
                     }
                 } else {
@@ -223,6 +224,11 @@ pub fn new(
         assert!(settings.fd == -1, "tun-auto is not compatible with tun-fd");
     }
 
+    let (stack, mut tcp_listener, udp_socket) = netstack::NetStack::with_buffer_size(
+        *crate::option::NETSTACK_OUTPUT_CHANNEL_SIZE,
+        *crate::option::NETSTACK_UDP_UPLINK_CHANNEL_SIZE,
+    )?;
+
     Ok(Box::pin(async move {
         let fakedns = Arc::new(FakeDns::new(fake_dns_mode));
         for filter in fake_dns_filters.into_iter() {
@@ -232,10 +238,6 @@ pub fn new(
         let inbound_tag = inbound.tag.clone();
         let framed = tun.into_framed();
         let (mut tun_sink, mut tun_stream) = framed.split();
-        let (stack, mut tcp_listener, udp_socket) = netstack::NetStack::with_buffer_size(
-            *crate::option::NETSTACK_OUTPUT_CHANNEL_SIZE,
-            *crate::option::NETSTACK_UDP_UPLINK_CHANNEL_SIZE,
-        );
         let (mut stack_sink, mut stack_stream) = stack.split();
 
         let mut futs: Vec<Runner> = Vec::new();
@@ -243,10 +245,16 @@ pub fn new(
         // Reads packet from stack and sends to TUN.
         futs.push(Box::pin(async move {
             while let Some(pkt) = stack_stream.next().await {
-                if let Ok(pkt) = pkt {
-                    if let Err(e) = tun_sink.send(TunPacket::new(pkt)).await {
-                        // TODO Return the error
-                        log::error!("Sending packet to TUN failed: {}", e);
+                match pkt {
+                    Ok(pkt) => {
+                        if let Err(e) = tun_sink.send(TunPacket::new(pkt)).await {
+                            // TODO Return the error
+                            // error!("Sending packet to TUN failed: {}", e);
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        // error!("Net stack erorr: {}", e);
                         return;
                     }
                 }
@@ -256,9 +264,15 @@ pub fn new(
         // Reads packet from TUN and sends to stack.
         futs.push(Box::pin(async move {
             while let Some(pkt) = tun_stream.next().await {
-                if let Ok(pkt) = pkt {
-                    if let Err(e) = stack_sink.send(pkt.into_bytes().into()).await {
-                        log::error!("Sending packet to NetStack failed: {}", e);
+                match pkt {
+                    Ok(pkt) => {
+                        if let Err(e) = stack_sink.send(pkt.into_bytes().into()).await {
+                            // error!("Sending packet to NetStack failed: {}", e);
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        // error!("TUN error: {}", e);
                         return;
                     }
                 }
@@ -287,7 +301,7 @@ pub fn new(
             handle_inbound_datagram(udp_socket, inbound_tag, nat_manager, fakedns.clone()).await;
         }));
 
-        info!("start tun inbound");
+        // info!("start tun inbound");
         futures::future::select_all(futs).await;
     }))
 }
