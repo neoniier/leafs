@@ -33,7 +33,7 @@ jobs:
           zip -r leaf.xcframework.zip leaf.xcframework
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@latest
         with:
           name: leaf.xcframework.zip
           path: leaf.xcframework.zip
