@@ -1,4 +1,4 @@
-name: releases
+name: Build macOS/iOS Leaf
 
 on:
   push:
@@ -9,31 +9,76 @@ jobs:
   build-apple:
     runs-on: macos-latest
     steps:
-      - name: Checkout
+      # Checkout the repository, keeping submodules
+      - name: Checkout code
         uses: actions/checkout@v3
         with:
           submodules: true
 
+      # Install Rust 1.73.0 exactly
       - name: Install Rust
-        uses: hecrj/setup-rust-action@v1
+        uses: actions-rs/toolchain@v1
         with:
-          rust-version: stable
+          toolchain: 1.73.0
+          override: true
 
-      - name: Install tools
+      # Install tools needed for Apple builds
+      - name: Install build tools
         run: |
-          cargo install cbindgen
           brew install llvm unzip protobuf
+          cargo install cbindgen
 
-      - name: Build macOS and iOS
-        run: ./scripts/build_apple_xcframework.sh
+      # Build the XCFramework
+      - name: Build Apple XCFramework
+        run: |
+          ./scripts/build_apple_xcframework.sh
 
-      - name: Zip XCFramework
+      # Zip the output
+      - name: Zip artifacts
         run: |
           mv target/apple/release/leaf.xcframework .
           zip -r leaf.xcframework.zip leaf.xcframework
 
+      # Upload the artifact
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: leaf.xcframework.zip
           path: leaf.xcframework.zip
+
+  release-apple:
+    needs: build-apple
+    runs-on: macos-latest
+    steps:
+      # Checkout code for tagging/release
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      # Create GitHub Release from tag
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      # Download the artifact from previous job
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: leaf.xcframework.zip
+          path: ./leaf.xcframework.zip
+
+      # Upload to GitHub Release
+      - name: Upload XCFramework to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: leaf.xcframework.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
